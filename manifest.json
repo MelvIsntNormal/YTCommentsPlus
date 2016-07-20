@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "YouTube Plus Filter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Removes comments with a single plus ('+') from YouTube comment threads.",
   "minimum_chrome_version": "26",
   "content_scripts": [

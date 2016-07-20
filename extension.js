@@ -8,6 +8,9 @@ function iterator(list, self) {
   }};
 }
 
+
+// This is supposed to wait for changes to the comments section, then remove any plus comments
+// There seems to be a bug when using other extensions.
 (new MutationObserver(function (mutations) {
   var commentsSection = document.querySelector('#comment-section-renderer-items');
 
@@ -24,5 +27,6 @@ function iterator(list, self) {
     hideReccomendations(commentsSection);
   });
   commentsSectionObserver.observe(commentsSection, {childList: true, subtree: true});
+  hideReccomendations(commentsSection);
 
 })).observe(document.querySelector("#watch-discussion"), {childList: true});
