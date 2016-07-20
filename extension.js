@@ -17,7 +17,6 @@ function iterator(list, self) {
   function hideReccomendations(commentsSection) {
     var comments = commentsSection.querySelectorAll('.comment-renderer');
     iterator(comments).forEach(function (comment, comments, index) {
-      console.log(comment);
       var content = comment.querySelector('.comment-renderer-text-content').innerText.trim();
       if(content === "+") comment.remove();
     });
