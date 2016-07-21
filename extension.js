@@ -8,24 +8,101 @@ function iterator(list, self) {
   }};
 }
 
+function videoIDOfComments(commentsSection) {
+  var container = commentsSection.parentElement.parentElement.parentElement;
+  return container.querySelector("meta[itemprop='videoId']").content.trim();
+}
 
-// This is supposed to wait for changes to the comments section, then remove any plus comments
-// There seems to be a bug when using other extensions.
-(new MutationObserver(function (mutations) {
-  var commentsSection = document.querySelector('#comment-section-renderer-items');
 
-  function hideReccomendations(commentsSection) {
-    var comments = commentsSection.querySelectorAll('.comment-renderer');
+var CommentFilter = {
+  // constructor
+  create: function (containerElementID, commentsSectionID) {
+    // Create an object using the object I'm inside as the base
+    var self = Object.create(this);
+    self.containerElementID = containerElementID;
+    self.commentsSectionID = commentsSectionID;
+    self.running = false;
+    return self;
+  },
+
+  start: function (videoID) {
+    var 
+      self = this,
+      container = document.body,
+      initialObserver;
+
+    function initialObserverCallback(mutations) {
+      if (self.commentsSection) initialObserver.disconnect();
+      else {
+        self.commentsSection = container.querySelector(self.commentsSectionID);
+        if (!self.commentsSectionObserver) {
+          initialObserver.disconnect();
+        } else if(self.commentsSection && self.commentsSectionBelongsToVideo(videoID)) {
+          self.commentsSectionObserver.observe(self.commentsSection, {childList: true, subtree: true});
+          self.hideReccomendations();
+        } else {
+          self.commentsSection = null;
+        }
+      }
+    }
+
+    if (self.running) return;
+
+    if(!container) {
+      setTimeout(1000, self.start.bind(self));
+    } else {
+      self.commentsSectionObserver = new MutationObserver(function (mutations) { console.log(mutations); self.hideReccomendations(); });
+      initialObserver = new MutationObserver(initialObserverCallback);
+      initialObserver.observe(container, {childList: true, subtree: true});
+      initialObserverCallback();
+      self.running = true;
+    }
+  },
+
+  end: function () {
+    var
+      self = this;
+
+    if (!self.running) return;
+    self.commentsSectionObserver.disconnect();
+    self.commentsSectionObserver = null;
+    self.commentsSection = null;
+    self.running = false;
+  },
+
+  hideReccomendations: function () {
+    var 
+      self = this;
+      comments = self.commentsSection.querySelectorAll('.comment-renderer');
+
     iterator(comments).forEach(function (comment, comments, index) {
       var content = comment.querySelector('.comment-renderer-text-content').innerText.trim();
       if(content === "+") comment.remove();
     });
+  },
+
+  commentsSectionBelongsToVideo: function (videoID) {
+    var
+      self = this,
+      sectionID = videoIDOfComments(self.commentsSection);
+    return sectionID === videoID;
   }
+}
 
-  var commentsSectionObserver = new MutationObserver(function (mutations) {
-    hideReccomendations(commentsSection);
-  });
-  commentsSectionObserver.observe(commentsSection, {childList: true, subtree: true});
-  hideReccomendations(commentsSection);
+var IDs = {
+  container: ".watch-main-col",
+  commentsSection: "#comment-section-renderer-items"
+}
 
-})).observe(document.querySelector("#watch-discussion"), {childList: true});
+var commentFilter = CommentFilter.create(IDs.container, IDs.commentsSection);
+
+var port = chrome.runtime.connect();
+
+port.onMessage.addListener(function (message) {
+  if (commentFilter.running) {
+    commentFilter.end();
+  }
+  if (message.validPage) {
+    commentFilter.start(message.videoID);
+  }
+});
