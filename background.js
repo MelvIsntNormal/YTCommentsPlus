@@ -1,45 +1,33 @@
-function parseQueryString(queryString) {
+(function (PlusFilter) {
+  "use strict";
+  console.log(self.PlusFilter);
 
-  function reductor(params, paramString) {
-    var param = paramString.split('=');
-    params[param[0]] = param[1];
-    return params;
-  }
+  const
+    utils = PlusFilter.utils,
+    parseQueryString = utils.parseQueryString,
+    urlPointsToVideo = utils.urlPointsToVideo,
+    videoIDOf = utils.videoIDOf,
+    sendCommand = utils.sendCommand;
 
-  if (queryString[0] === '?') queryString = queryString.substr(1);
-  return queryString.split('&').reduce(reductor, {});
-}
-
-function urlPointsToVideo(url) {
-  return (url.pathname === "/watch") && 
-    (url.hostname.trim() === "www.youtube.com");
-}
-
-function videoIDOf(url) {
-  var params = parseQueryString(url.search);
-  return params['v'];
-}
-
-function sendCommand(port, urlString) {
-  var url = new URL(urlString);
-  var command = {validPage: urlPointsToVideo(url)};
-  if (command.validPage) command.videoID = videoIDOf(url);
-  port.postMessage(command);
-}
-
-chrome.runtime.onConnect.addListener(function (port) {
-  var tab = port.sender.tab;
-  sendCommand(port, tab.url);
-
-  function historyListener(details) {
+  const historyListener = function (details) {
     if (details.tabId === tab.id) {
       console.log(details.url);
       sendCommand(port, details.url);
     }
   }
 
-  chrome.webNavigation.onHistoryStateUpdated.addListener(historyListener);
-  port.onDisconnect.addListener(function () {
+  const onDisconnectListener = function () {
     chrome.webNavigation.onHistoryStateUpdated.removeListener(historyListener);
-  });
-});
+  }
+
+  const onConnectListener = function (port) {
+    const tab = port.sender.tab;
+    sendCommand(port, tab.url);
+
+    chrome.webNavigation.onHistoryStateUpdated.addListener(historyListener);
+    port.onDisconnect.addListener(onDisconnectListener);
+  }
+
+  chrome.runtime.onConnect.addListener(onConnectListener);
+
+})(self.PlusFilter = self.PlusFilter || {});
