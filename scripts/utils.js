@@ -1,137 +1,119 @@
 (function (CommentsPlus) {
   "use strict";
 
-  const exports = CommentsPlus.utils = CommentsPlus.utils || {};
-
   const
-    stream = highland,
-    curry = highland.curry.bind(highland);
+    stream = Kefir.stream,
+    sequence = Kefir.sequentially,
+    curry = R.curry,
+    flatten = R.flatten,
+    any = R.any,
+    compose = R.compose,
+    not = R.not,
+    forEach = R.forEach,
+    isArrayLike = R.isArrayLike,
+    _ = R.__;
 
-  const videoIdOfComments = exports.videoIdOfComments = function (commentsSection) {
-    const container = commentsSection.parentElement.parentElement.parentElement;
-    return container.querySelector("meta[itemprop='videoId']").content.trim();
-  };
-
-  const parseQueryString = exports.parseQueryString = function (queryString) {
-    const reductor = function (params, paramString) {
-      const param = paramString.split('=');
-      params[param[0]] = param[1];
-      return params;
-    }
-
-    return 
-      (queryString[0] === '?' 
-        ? queryString 
-        : queryString.substr(1)
-      ).split('&').reduce(reductor, {});
-  };
-
-  const urlPointsToVideo = exports.urlPointsToVideo = function (url) {
-    return (url.pathname === "/watch") && 
-      (url.hostname.trim() === "www.youtube.com");
-  };
-
-  const videoIdOf = exports.videoIdOf = function (url) {
-    const params = this.parseQueryString(url.search);
-    return params['v'];
-  };
-
-  const sendCommand = exports.sendCommand = function (port, urlString) {
-    console.log(this);
-    const url = new URL(urlString);
-    const command = {validPage: urlPointsToVideo(url)};
-    if (command.validPage) command.videoID = videoIDOf(url);
-    port.postMessage(command);
-  };
-
-  const awaitNext = exports.awaitNext = function (stream) {
-    return new Promise(function (resolve, reject) {
-      stream.pull(function (err, item) {
-        if (err) reject(err);
-        else resolve(item);
-      });
-    });
-  };
-
-  const awaitElement = exports.awaitElement = function (selector, container) {
+  const awaitElement = curry(function (selector, container) {
     container = container || document;
-    function _recurse(resolve, reject) {
-      const element = container.querySelector(selector);
-      if (element) resolve(element);
-      else awaitNext(animationFrame).then(function () {_recurse(resolve, reject);});
+
+    function cb(resolve, reject) {
+      animationFrame.take(1).observe(function (time) {
+        const el = container.querySelector(selector);
+        if (el) resolve(el);
+        else cb(resolve, reject);
+      });
     };
 
-    return new Promise(_recurse);
-  };
-
-  const animationFrame = stream(function (push, next) {
-    window.requestAnimationFrame(function (time) {
-      push(null, time);
-      next();
-    });
+    return new Promise(cb);
   });
 
-  const bindMethods = exports.bindMethods = function (object) {
-    Object.keys(object)
-      .filter(function (key) { return typeof(object[key] === "function"); })
-      .forEach(function (key) { object[key] = object[key].bind(object); });
+  const fromPromise = function (promise) {
+    return Kefir.fromPromise(promise);
   };
 
-  const mapPromise = exports.mapPromise = function (promiseFunc) {
-    return function (item) {
-      return stream(promiseFunc(item));
-    };
-  };
+  const animationFrame = stream(function (emitter) {
+    function emitTime(time) {
+      emitter.emit(time);
+      window.requestAnimationFrame(emitTime);
+    }
+    window.requestAnimationFrame(emitTime);
+  });
 
   const isElement = function (object) {
     return object instanceof Element;
   };
 
   const addedNodes = function (mutation) {
-    return stream(mutation.addedNodes);
+    return mutation.addedNodes || [];
   };
 
   const discussionElement = function (element) {
     return element.querySelector('#watch-discussion');
   };
 
-  const elementFilter = exports.elementFilter = function (selector, element) {
+  const elementMatches = curry(function (selector, element) {
     return isElement(element) && element.matches(selector);
-  };
-
-  const mutationStreamCallback = exports.mutationStream = curry(function (push, mutations) {
-    stream(mutations)
-      .map(addedNodes)
-      .flatten()
-      .filter(isElement)
-      .each(push);
   });
 
-  const mutationStreamGenerator = curry(function (element, push, next) {
+  const elementMatchesAny = curry(function (selectors, element) {
+    return any(elementMatches(_, element))(selectors);
+  });
+
+  const mutationStreamCallback = curry(function (emit, mutations) {
+    flatten(mutations.map(addedNodes))
+      .filter(isElement)
+      .forEach(emit);
+  });
+
+  const emitExisting = curry(function (element, callback, selector) {
+    callback([{addedNodes: element.querySelectorAll(selector)}]);
+  });
+
+  const mutationStreamGenerator = curry(function (element, options, emitter) {
     const 
-      pushFunc = curry(push)(null),
+      pushFunc = emitter.value,
       callback = mutationStreamCallback(pushFunc),
       observer = new MutationObserver(callback);
-    observer.observe(element, {childList: true});
+    observer.observe(element, options);
+
+    if (isArrayLike(options.emitExisting)) 
+      forEach(emitExisting(element, callback), options.emitExisting);
+
+    // This will be called when the last listener unsubscribes
+    return function () {
+      observer.disconnect();
+      emitter.end();
+    };
   });
 
-  const mutationStream = exports.mutationStream = function (element) {
-    const 
-      generator = mutationStreamGenerator(element);
-    return stream(generator);
+  const mutationStream = function (element, options) {
+    return stream(mutationStreamGenerator(element, options));
   };
 
-  const swapProcess = exports.swapProcess = function (Process) {
-    return function (previousProcess, commentsSection) {
-      if (previousProcess) previousProcess.terminate();
-      const newProcess = Process.new(commentsSection);
-      newProcess.start();
-      return newProcess;
-    }
-  }; 
-
-  const startProcess = function (proc) {
-    if (proc) proc.start();
+  const headComment = function (comment) {
+    // A comment is a head comment if it has a sibling that renders replies
+    return comment
+      .parentElement
+      .querySelector('.comment-replies-renderer');
   };
 
-})(self.CommentsPlus = self.CommentsPlus || {});
+  const replyComment = compose(not, headComment);
+
+  const removePlus = function (comment) {
+    const
+      textEl = comment.querySelector('.comment-renderer-text-content'),
+      text = textEl.innerText.trim();
+
+    if (text === '+') comment.remove();
+  };
+
+  CommentsPlus.utils = {
+    elementMatchesAny: elementMatchesAny,
+    mutationStream: mutationStream,
+    awaitElement: awaitElement,
+    removePlus: removePlus,
+    fromPromise: fromPromise,
+    replyComment: replyComment
+  };
+
+})(global.CommentsPlus);

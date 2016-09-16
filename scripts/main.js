@@ -1,40 +1,46 @@
-(function (CommentsPlus) {
-  "use strict";
-  
-  const
-    stream = highland,
-    curry = highland.curry.bind(highland),
-    Process = CommentsPlus.Process,
-    utils = CommentsPlus.utils,
+'use strict';
 
-    awaitElement = curry(utils.awaitElement),
-    elementFilter = curry(utils.elementFilter),
-    mapPromise = utils.mapPromise,
-    mutationStream = utils.mutationStream,
-    swapProcess = utils.swapProcess(Process);
+(function (CommentsPlus) {
 
   const 
-    contentElement = document.querySelector('#content'),
-    watchContainerSelector = '#watch7-container',
-    discussionSelector = '#watch-discussion';
+    NodeWatcher = CommentsPlus.NodeWatcher,
+    utils = CommentsPlus.utils,
 
-  const main = function () {
-    const
-      elFilter = elementFilter(watchContainerSelector),
-      awaitDiscussion = awaitElement(discussionSelector),
-      mapper = mapPromise(awaitDiscussion),
-      firstContainer = document.querySelector(watchContainerSelector),
-      streamHead = stream([firstContainer]),
-      streamTail = mutationStream(contentElement),
-      containerStream = stream([streamHead, streamTail]).merge();
+    awaitElement = utils.awaitElement,
+    fromPromise = utils.fromPromise,
+    pipeTo = utils.pipeTo,
+    replyComment = utils.replyComment,
+    removePlus = utils.removePlus;
 
-    containerStream
-      .filter(elFilter)
-      .flatMap(mapper)
-      .scan(null, swapProcess)
-      .each(function empty() {});
+  const discussionWatcherCtor = function (container) {
+    // Construct a watcher that looks for comments in the comments section
+    return NodeWatcher.new({
+      container: container,
+      selectors: ['.comment-renderer'],
+      options: {
+        childList: true,
+        subtree: true,
+        emitExisting: ['.comment-renderer']
+      }
+    }).filter(replyComment)
+      .observe(removePlus);
   };
 
-  main();
+  // Ends an old watcher when the comments section changes
+  const discussionSwitcher = NodeWatcher.switcher(discussionWatcherCtor);
 
-})(self.CommentsPlus = self.CommentsPlus || {});
+  // Watches the "content" container and looks for new discussion containers
+  const contentWatcher = NodeWatcher.new({
+    container: document.querySelector('#content'),
+    selectors: ['#watch7-container'],
+    options: {
+      childList: true, 
+      emitExisting: ['#watch7-container']
+    }
+  }).map(awaitElement('.comment-section-renderer-items'))
+    .flatMap(fromPromise);
+
+  // Send all discussion containers to the switcher
+  discussionSwitcher.plug(contentWatcher);
+
+})(global.CommentsPlus);
