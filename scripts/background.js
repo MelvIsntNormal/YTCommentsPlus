@@ -2,10 +2,11 @@
 
 chrome.runtime.onInstalled.addListener(function (details) {
   const 
-    updated = details.reason === 'update',
-    version = chrome.runtime.getManifest().version_name,
-    title = "YouTube Comments+ " + (updated? "Updated!" : "Installed!"),
-    message = updated? "Updated to " + version : "Thank you for installing";
+    title = "YouTube Comments+ Disabled",
+    message = `
+      This extension has been disabled due to the changes in YouTube's layout.
+      See github.com/MelvIsntNormal/YTCommentsPlus for more details and updates.
+    `;
 
 
   chrome.notifications.create("install", {

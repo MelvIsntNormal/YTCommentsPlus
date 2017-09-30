@@ -5,7 +5,7 @@
   "version_name": "Alpha 1",
   "description": "Removes comments with a single plus ('+') from YouTube comment threads.",
   "minimum_chrome_version": "26",
-  "permissions": ["*://*.youtube.com/*", "webNavigation", "tabs", "notifications"],
+  "permissions": ["*://*.youtube.com/*", "tabs", "notifications"],
   "icons": {
     "16":   "./images/icons/icon_16.png",
     "32":   "./images/icons/icon_32.png",
